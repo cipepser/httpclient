@@ -6,16 +6,19 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/cipepser/httpclient/sdk"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -29,9 +32,47 @@ const (
 	URL = "https://api.bitflyer.jp"
 )
 
-// Client is a wrapper of sdk.Client for bitflyer api.
+// Client wraps sdk.Client to access bitflyer api.
 type Client struct {
-	sdk.Client
+	URL        *url.URL
+	HTTPClient *http.Client
+	Logger     *log.Logger
+}
+
+// NewClient is a constructor of Client.
+func NewClient(urlStr string, logger *log.Logger) (*Client, error) {
+	parsedURL, err := url.ParseRequestURI(urlStr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse url: %s", urlStr)
+	}
+
+	var discardLogger = log.New(ioutil.Discard, "", log.LstdFlags)
+	if logger == nil {
+		logger = discardLogger
+	}
+
+	c := &Client{
+		URL:        parsedURL,
+		HTTPClient: &http.Client{},
+		Logger:     logger,
+	}
+
+	return c, err
+}
+
+// NewRequest is a wrapper of http.NewRequest which has timeout by context package.
+func (c *Client) NewRequest(ctx context.Context, method, spath string, body io.Reader) (*http.Request, error) {
+	u := *c.URL
+	u.Path = path.Join(c.URL.Path, spath)
+
+	req, err := http.NewRequest(method, u.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req = req.WithContext(ctx)
+
+	return req, nil
 }
 
 // ************** public API **************
